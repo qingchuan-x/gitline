@@ -150,7 +150,7 @@ export class GitLineSettingTab extends PluginSettingTab {
           }),
       );
 
-    this.previewEl = containerEl.createEl("div", { cls: "obg-setting-preview", text: "" });
+    this.previewEl = containerEl.createEl("div", { cls: "gitline-setting-preview", text: "" });
     this.previewEl.createEl("strong", { text: "Preview · 预览：" });
     this.refreshPreview();
   }

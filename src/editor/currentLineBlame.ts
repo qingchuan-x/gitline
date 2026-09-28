@@ -2,7 +2,6 @@ import { EditorState, StateEffect } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate, WidgetType } from "@codemirror/view";
 import type GitLinePlugin from "../main";
 import type { BlameLine } from "../types";
-import { blameFile } from "../git/blame";
 import { formatBlame } from "../util/format";
 
 /** 异步结果到达后携带新的 DecorationSet */
@@ -22,7 +21,7 @@ class BlameWidget extends WidgetType {
   }
   toDOM(): HTMLElement {
     const s = document.createElement("span");
-    s.className = "obg-blame";
+    s.className = "gitline-blame";
     s.textContent = this.text;
     return s;
   }
@@ -93,7 +92,7 @@ class CurrentLineBlamePlugin {
     let result = this.plugin.cache.get(key);
     if (result === undefined) {
       try {
-        result = await blameFile(absPath, { ignoreWhitespace: this.plugin.settings.ignoreWhitespace });
+        result = await this.plugin.fetchBlame(absPath, this.plugin.settings.ignoreWhitespace);
       } catch {
         result = null;
       }

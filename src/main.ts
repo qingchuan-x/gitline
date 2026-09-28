@@ -2,9 +2,10 @@ import { FileSystemAdapter, MarkdownView, Plugin } from "obsidian";
 import type { EditorView } from "@codemirror/view";
 import { join } from "path";
 import { DEFAULT_SETTINGS, GitLineSettingTab } from "./settings";
-import type { BlameLine, GitLineSettings } from "./types";
+import type { BlameLine, BlameResult, GitLineSettings } from "./types";
 import { currentLineBlameExtension, notifySettingsChanged } from "./editor/currentLineBlame";
 import { BlameCache } from "./cache/blameCache";
+import { blameFile } from "./git/blame";
 import { isGitAvailable } from "./git/gitRunner";
 import { formatTime } from "./util/time";
 
@@ -15,6 +16,8 @@ export default class GitLinePlugin extends Plugin {
   private gitOk = false;
   private statusBarEl: HTMLElement | null = null;
   private lastBlameInfo: BlameLine | null = null;
+  /** 同文件 in-flight blame 去重，避免快速移动光标时并发跑多个 git blame */
+  private blameInFlight = new Map<string, Promise<BlameResult | null>>();
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -47,8 +50,8 @@ export default class GitLinePlugin extends Plugin {
   async loadSettings(): Promise<void> {
     const loaded = (await this.loadData()) as Partial<GitLineSettings> | null;
     const merged: GitLineSettings = Object.assign({}, DEFAULT_SETTINGS, loaded);
-    const version = loaded?.settingsVersion ?? 1;
-    if (version < 2) {
+    const version = loaded ? (loaded.settingsVersion ?? 1) : DEFAULT_SETTINGS.settingsVersion;
+    if (loaded && version < 2) {
       // v1 → v2：默认显示格式升级为「提交人 + 提交时间(精确到分钟) + 提交消息」
       merged.format = DEFAULT_SETTINGS.format;
       merged.timeStyle = DEFAULT_SETTINGS.timeStyle;
@@ -97,6 +100,22 @@ export default class GitLinePlugin extends Plugin {
 
   resolveAbsPath(filePath: string): string {
     return join(this.getVaultPath(), filePath);
+  }
+
+  /**
+   * 拉取单个文件的 blame，带同文件并发去重。
+   * 返回 null = 不在仓库 / git 报错。
+   */
+  fetchBlame(absPath: string, ignoreWhitespace: boolean): Promise<BlameResult | null> {
+    const key = absPath + "::" + (ignoreWhitespace ? "w" : "n");
+    let p = this.blameInFlight.get(key);
+    if (!p) {
+      p = blameFile(absPath, { ignoreWhitespace }).finally(() => {
+        this.blameInFlight.delete(key);
+      });
+      this.blameInFlight.set(key, p);
+    }
+    return p;
   }
 
   /** 状态栏只反映活动文件（filePath 需与活动文件一致，避免后台编辑器覆盖） */
