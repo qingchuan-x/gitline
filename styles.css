@@ -1,0 +1,14 @@
+/* GitLine: line-end git blame widget */
+.obg-blame {
+  margin-left: 0.6em;
+  font-size: 0.82em;
+  color: var(--text-muted);
+  opacity: 0.75;
+  user-select: none;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.obg-blame:hover {
+  opacity: 1;
+  color: var(--text-normal);
+}
