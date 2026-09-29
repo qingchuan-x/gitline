@@ -2,7 +2,7 @@
 
 GitLine is an Obsidian desktop plugin that shows Git blame information at the end of the current cursor line. Each line displays the committer, the commit time, and the commit message, using a fully configurable format.
 
-![1790724660002](image/README/1790724660002.png)
+![preview](image/README/preview.png)
 
 [简体中文版](README_zh.md)
 

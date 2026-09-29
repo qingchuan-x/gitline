@@ -2,7 +2,7 @@
 
 GitLine 是一个 Obsidian 桌面端插件，在当前光标所在行的行尾显示该行的 Git 归属信息：提交人、提交时间与提交消息，显示格式可完全自定义。
 
-![1790724648447](image/README_zh/1790724648447.png)
+![preview](image/README/preview.png)
 
 [English](README.md)
 
