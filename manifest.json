@@ -1,7 +1,7 @@
 {
   "id": "gitline",
   "name": "GitLine",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "minAppVersion": "1.0.0",
   "description": "Show Git blame (time / author / message) at the end of the current line. 在当前光标所在行的行尾显示该行 Git 归属：提交人、提交时间、提交消息，格式可配置.",
   "author": "qingchuan-x",

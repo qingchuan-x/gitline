@@ -1,6 +1,6 @@
 {
   "name": "gitline",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Show Git blame (time/author/message) at end of the current line, format configurable. 行尾 Git 归属：时间、提交人、提交消息，格式可配置。",
   "main": "main.js",
   "scripts": {
