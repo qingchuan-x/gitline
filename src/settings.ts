@@ -35,7 +35,7 @@ export class GitLineSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "GitLine · Line-end Git blame / 行尾 Git 归属" });
+    new Setting(containerEl).setName("GitLine · Line-end Git blame / 行尾 Git 归属").setHeading();
     containerEl.createEl("p", {
       text:
         "Shows the Git blame of the current cursor line at its end. Requires Obsidian desktop + git. / 在当前光标所在行的行尾显示该行的 Git 归属信息。需要桌面端 + git 环境。",

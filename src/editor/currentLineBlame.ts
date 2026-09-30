@@ -20,8 +20,7 @@ class BlameWidget extends WidgetType {
     super();
   }
   toDOM(): HTMLElement {
-    const s = document.createElement("span");
-    s.className = "gitline-blame";
+    const s = createEl("span", { cls: "gitline-blame" });
     s.textContent = this.text;
     return s;
   }
