@@ -1,13 +1,18 @@
 {
   "name": "gitline",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Show Git blame (time/author/message) at end of the current line, format configurable. 行尾 Git 归属：时间、提交人、提交消息，格式可配置。",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
   },
-  "keywords": ["obsidian", "obsidian-plugin", "git", "blame"],
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "git",
+    "blame"
+  ],
   "license": "MIT",
   "devDependencies": {
     "@codemirror/state": "^6.4.1",
