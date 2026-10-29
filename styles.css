@@ -1,11 +1,13 @@
 /* GitLine: line-end git blame widget */
 .gitline-blame {
+  display: inline-block;
   margin-left: 0.6em;
   font-size: 0.82em;
   color: var(--text-muted);
   opacity: 0.75;
   user-select: none;
   white-space: nowrap;
+  vertical-align: baseline;
   pointer-events: none;
 }
 .gitline-blame:hover {

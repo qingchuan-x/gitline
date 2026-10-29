@@ -31,6 +31,8 @@ class BlameWidget extends WidgetType {
 
 class CurrentLineBlamePlugin {
   decorations: DecorationSet = Decoration.none;
+  /** 行尾 widget 作为原子区域，避免光标进入/越过 widget */
+  atomicRanges: DecorationSet = Decoration.none;
   private currentLine = -1;
   /** 递增序号，用于丢弃过期的异步结果 */
   private seq = 0;
@@ -61,6 +63,7 @@ class CurrentLineBlamePlugin {
       this.currentLine = line;
       // 换行：先清空再异步拉取
       this.decorations = Decoration.none;
+      this.atomicRanges = Decoration.none;
       this.refresh();
     }
   }
@@ -73,6 +76,7 @@ class CurrentLineBlamePlugin {
 
     if (!this.plugin.gitReady() || !settings.enabled || !filePath || line < 1) {
       this.decorations = Decoration.none;
+      this.atomicRanges = Decoration.none;
       this.plugin.onBlameInfo(null, filePath);
       return;
     }
@@ -128,6 +132,7 @@ class CurrentLineBlamePlugin {
   private setAsync(set: DecorationSet): void {
     if (set === this.decorations) return;
     this.decorations = set;
+    this.atomicRanges = set;
     this.view.dispatch({ effects: applyBlameEffect.of(set) });
   }
 }
@@ -138,7 +143,7 @@ function lineAt(state: EditorState): number {
 
 /** 注册当前行 blame 扩展 */
 export function currentLineBlameExtension(plugin: GitLinePlugin) {
-  return ViewPlugin.fromClass(
+  const blamePlugin = ViewPlugin.fromClass(
     class extends CurrentLineBlamePlugin {
       constructor(view: EditorView) {
         super(view, plugin);
@@ -146,4 +151,8 @@ export function currentLineBlameExtension(plugin: GitLinePlugin) {
     },
     { decorations: (v) => v.decorations },
   );
+  return [
+    blamePlugin,
+    EditorView.atomicRanges.of((view) => view.plugin(blamePlugin)?.atomicRanges ?? Decoration.none),
+  ];
 }
