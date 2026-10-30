@@ -34,6 +34,10 @@ class CurrentLineBlamePlugin {
   /** 行尾 widget 作为原子区域，避免光标进入/越过 widget */
   atomicRanges: DecorationSet = Decoration.none;
   private currentLine = -1;
+  /** 当前行内容已改但尚未保存时，先清空旧 blame，避免显示旧提交 */
+  private dirtyLines = new Set<number>();
+  private lastFilePath: string | null = null;
+  private lastMtime: number | null = null;
   /** 递增序号，用于丢弃过期的异步结果 */
   private seq = 0;
 
@@ -47,11 +51,21 @@ class CurrentLineBlamePlugin {
 
   update(update: ViewUpdate): void {
     let settingsChanged = false;
+    let hasBlameEffect = false;
     for (const tr of update.transactions) {
       for (const effect of tr.effects) {
-        if (effect.is(applyBlameEffect)) this.decorations = effect.value;
+        if (effect.is(applyBlameEffect)) {
+          this.decorations = effect.value;
+          hasBlameEffect = true;
+        }
         if (effect.is(settingsChangedEffect)) settingsChanged = true;
       }
+    }
+    // 同一行编辑后必须把行尾 widget 映射到新的行尾，
+    // 否则它会停留在旧位置，看起来像插到了正文中间。
+    if (!hasBlameEffect && update.docChanged) {
+      this.decorations = this.decorations.map(update.changes);
+      this.atomicRanges = this.atomicRanges.map(update.changes);
     }
     if (settingsChanged) {
       this.refresh();
@@ -65,6 +79,18 @@ class CurrentLineBlamePlugin {
       this.decorations = Decoration.none;
       this.atomicRanges = Decoration.none;
       this.refresh();
+      return;
+    }
+    // 同一行内容变化（复制、粘贴、输入）时必须重新 blame，
+    // 否则旧文件的提交消息会一直挂在新文本上。
+    if (update.docChanged) {
+      const oldLine = update.startState.doc.lineAt(update.startState.selection.main.head);
+      if (oldLine.text !== update.state.doc.lineAt(sel.head).text) {
+        this.dirtyLines.add(line);
+        this.decorations = Decoration.none;
+        this.atomicRanges = Decoration.none;
+        this.refresh();
+      }
     }
   }
 
@@ -73,6 +99,11 @@ class CurrentLineBlamePlugin {
     const line = this.currentLine;
     // 按当前编辑器所属 leaf 解析它自己的文件（分栏时各编辑器互不干扰）
     const filePath = this.plugin.getFilePathForEditor(this.view);
+    if (filePath !== this.lastFilePath) {
+      this.lastFilePath = filePath;
+      this.lastMtime = null;
+      this.dirtyLines.clear();
+    }
 
     if (!this.plugin.gitReady() || !settings.enabled || !filePath || line < 1) {
       this.decorations = Decoration.none;
@@ -89,13 +120,21 @@ class CurrentLineBlamePlugin {
     const mtime = await this.plugin.getFileMtime(filePath);
     // 结果返回前：文件/行已变化则丢弃
     if (mySeq !== this.seq || this.plugin.getFilePathForEditor(this.view) !== filePath) return;
+    if (mtime !== this.lastMtime) {
+      this.lastMtime = mtime;
+      this.dirtyLines.clear();
+    }
+    if (this.dirtyLines.has(line)) {
+      this.plugin.onBlameInfo(null, filePath);
+      return;
+    }
 
     const absPath = this.plugin.resolveAbsPath(filePath);
     const key = this.plugin.cache.keyFor(absPath, mtime ?? 0, this.plugin.settings.ignoreWhitespace);
     let result = this.plugin.cache.get(key);
     if (result === undefined) {
       try {
-        result = await this.plugin.fetchBlame(absPath, this.plugin.settings.ignoreWhitespace);
+        result = await this.plugin.fetchBlame(absPath, this.plugin.settings.ignoreWhitespace, mtime ?? 0);
       } catch {
         result = null;
       }

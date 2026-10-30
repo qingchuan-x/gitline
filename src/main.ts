@@ -41,6 +41,12 @@ export default class GitLinePlugin extends Plugin {
       }),
     );
     this.registerEvent(this.app.workspace.on("editor-change", () => this.updateStatusBarText()));
+    // 文件保存后重新 blame，避免复制/粘贴后仍使用保存前的旧结果
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        if (file.path === this.app.workspace.getActiveFile()?.path) this.pokeActiveEditor();
+      }),
+    );
 
     this.addSettingTab(new GitLineSettingTab(this.app, this));
   }
@@ -106,8 +112,8 @@ export default class GitLinePlugin extends Plugin {
    * 拉取单个文件的 blame，带同文件并发去重。
    * 返回 null = 不在仓库 / git 报错。
    */
-  fetchBlame(absPath: string, ignoreWhitespace: boolean): Promise<BlameResult | null> {
-    const key = absPath + "::" + (ignoreWhitespace ? "w" : "n");
+  fetchBlame(absPath: string, ignoreWhitespace: boolean, version: string | number = 0): Promise<BlameResult | null> {
+    const key = absPath + "::" + version + "::" + (ignoreWhitespace ? "w" : "n");
     let p = this.blameInFlight.get(key);
     if (!p) {
       p = blameFile(absPath, { ignoreWhitespace }).finally(() => {
