@@ -7,15 +7,16 @@ interface CacheEntry {
 }
 
 /**
- * 简单 LRU。key = 绝对路径 + mtime + blame 选项（保存后 / 切换选项后自动失效）。
+ * 简单 LRU。key = 绝对路径 + mtime + 仓库状态 + blame 选项
+ * （文件保存、git commit/add、切换选项后自动失效）。
  * get 返回 undefined 表示未命中，null 表示命中"无结果"。
  */
 export class BlameCache {
   private map = new Map<string, CacheEntry>();
   constructor(private maxFiles: number) {}
 
-  keyFor(absFilePath: string, mtimeMs: number, ignoreWhitespace: boolean): string {
-    return `${absFilePath}::${mtimeMs}::${ignoreWhitespace ? "w" : "n"}`;
+  keyFor(absFilePath: string, mtimeMs: number, gitVersion: string | null, ignoreWhitespace: boolean): string {
+    return `${absFilePath}::${mtimeMs}::${gitVersion ?? "nogit"}::${ignoreWhitespace ? "w" : "n"}`;
   }
 
   get(key: string): BlameResult | null | undefined {

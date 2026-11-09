@@ -1,6 +1,6 @@
-import { FileSystemAdapter, MarkdownView, Plugin } from "obsidian";
+import { FileSystemAdapter, MarkdownView, Plugin, type Editor } from "obsidian";
 import type { EditorView } from "@codemirror/view";
-import { join } from "path";
+import { join } from "node:path";
 import { DEFAULT_SETTINGS, GitLineSettingTab } from "./settings";
 import type { BlameLine, BlameResult, GitLineSettings } from "./types";
 import { currentLineBlameExtension, notifySettingsChanged } from "./editor/currentLineBlame";
@@ -8,6 +8,13 @@ import { BlameCache } from "./cache/blameCache";
 import { blameFile } from "./git/blame";
 import { isGitAvailable } from "./git/gitRunner";
 import { formatTime } from "./util/time";
+
+/** Obsidian Editor 未公开声明，但桌面端实例持有 CodeMirror View */
+type EditorWithCodeMirror = Editor & { cm?: EditorView };
+
+function getCodeMirror(editor: Editor): EditorView | undefined {
+  return (editor as EditorWithCodeMirror).cm;
+}
 
 export default class GitLinePlugin extends Plugin {
   settings: GitLineSettings = { ...DEFAULT_SETTINGS };
@@ -89,7 +96,7 @@ export default class GitLinePlugin extends Plugin {
   getFilePathForEditor(cm: EditorView): string | null {
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       const view = leaf.view as MarkdownView;
-      const leafCm = (view.editor as any)?.cm as EditorView | undefined;
+      const leafCm = getCodeMirror(view.editor);
       if (leafCm === cm) return view.file?.path ?? null;
     }
     return this.app.workspace.getActiveFile()?.path ?? null;
@@ -142,19 +149,15 @@ export default class GitLinePlugin extends Plugin {
   private pokeActiveEditor(): void {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view) return;
-    const cm = (view.editor as any)?.cm as EditorView | undefined;
-    if (cm && typeof cm.dispatch === "function") {
-      notifySettingsChanged(cm);
-    }
+    const cm = getCodeMirror(view.editor);
+    if (cm) notifySettingsChanged(cm);
   }
 
   private notifyAllEditors(): void {
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       const view = leaf.view as MarkdownView;
-      const cm = (view.editor as any)?.cm as EditorView | undefined;
-      if (cm && typeof cm.dispatch === "function") {
-        notifySettingsChanged(cm);
-      }
+      const cm = getCodeMirror(view.editor);
+      if (cm) notifySettingsChanged(cm);
     }
   }
 

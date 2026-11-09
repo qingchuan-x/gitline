@@ -3,6 +3,7 @@ import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate, WidgetTy
 import type GitLinePlugin from "../main";
 import type { BlameLine } from "../types";
 import { formatBlame } from "../util/format";
+import { getGitStateVersion } from "../git/gitRunner";
 
 /** 异步结果到达后携带新的 DecorationSet */
 const applyBlameEffect = StateEffect.define<DecorationSet>();
@@ -34,8 +35,8 @@ class CurrentLineBlamePlugin {
   /** 行尾 widget 作为原子区域，避免光标进入/越过 widget */
   atomicRanges: DecorationSet = Decoration.none;
   private currentLine = -1;
-  /** 当前行内容已改但尚未保存时，先清空旧 blame，避免显示旧提交 */
-  private dirtyLines = new Set<number>();
+  /** 文档已改但尚未落盘时，整个文件都暂时不显示 blame，避免行号偏移后误用旧结果 */
+  private documentDirty = false;
   private lastFilePath: string | null = null;
   private lastMtime: number | null = null;
   /** 递增序号，用于丢弃过期的异步结果 */
@@ -51,47 +52,41 @@ class CurrentLineBlamePlugin {
 
   update(update: ViewUpdate): void {
     let settingsChanged = false;
-    let hasBlameEffect = false;
     for (const tr of update.transactions) {
       for (const effect of tr.effects) {
-        if (effect.is(applyBlameEffect)) {
-          this.decorations = effect.value;
-          hasBlameEffect = true;
-        }
+        if (effect.is(applyBlameEffect)) this.decorations = effect.value;
         if (effect.is(settingsChangedEffect)) settingsChanged = true;
       }
     }
-    // 同一行编辑后必须把行尾 widget 映射到新的行尾，
-    // 否则它会停留在旧位置，看起来像插到了正文中间。
-    if (!hasBlameEffect && update.docChanged) {
-      this.decorations = this.decorations.map(update.changes);
-      this.atomicRanges = this.atomicRanges.map(update.changes);
+
+    const sel = update.state.selection.main;
+    const line = update.state.doc.lineAt(sel.head).number;
+    const lineChanged = line !== this.currentLine;
+    if (lineChanged) this.currentLine = line;
+
+    // 文档变化必须优先于换行判断：多行粘贴会同时改变内容和光标行号，
+    // 否则会被误判为普通移动光标，继续沿用磁盘旧文件的提交消息。
+    if (update.docChanged) {
+      this.documentDirty = true;
+      this.clearAndRefresh();
+      return;
     }
     if (settingsChanged) {
       this.refresh();
       return;
     }
-    const sel = update.state.selection.main;
-    const line = update.state.doc.lineAt(sel.head).number;
-    if (line !== this.currentLine) {
-      this.currentLine = line;
-      // 换行：先清空再异步拉取
-      this.decorations = Decoration.none;
-      this.atomicRanges = Decoration.none;
-      this.refresh();
-      return;
+    if (lineChanged) {
+      // 换行：先清空状态栏和挂件，再异步拉取
+      this.clearAndRefresh();
     }
-    // 同一行内容变化（复制、粘贴、输入）时必须重新 blame，
-    // 否则旧文件的提交消息会一直挂在新文本上。
-    if (update.docChanged) {
-      const oldLine = update.startState.doc.lineAt(update.startState.selection.main.head);
-      if (oldLine.text !== update.state.doc.lineAt(sel.head).text) {
-        this.dirtyLines.add(line);
-        this.decorations = Decoration.none;
-        this.atomicRanges = Decoration.none;
-        this.refresh();
-      }
-    }
+  }
+
+  /** 清空可能残留的旧提交信息，并立即重新计算当前行 */
+  private clearAndRefresh(): void {
+    this.decorations = Decoration.none;
+    this.atomicRanges = Decoration.none;
+    this.plugin.onBlameInfo(null, this.plugin.getFilePathForEditor(this.view));
+    this.refresh();
   }
 
   private refresh(): void {
@@ -102,7 +97,7 @@ class CurrentLineBlamePlugin {
     if (filePath !== this.lastFilePath) {
       this.lastFilePath = filePath;
       this.lastMtime = null;
-      this.dirtyLines.clear();
+      this.documentDirty = false;
     }
 
     if (!this.plugin.gitReady() || !settings.enabled || !filePath || line < 1) {
@@ -120,21 +115,29 @@ class CurrentLineBlamePlugin {
     const mtime = await this.plugin.getFileMtime(filePath);
     // 结果返回前：文件/行已变化则丢弃
     if (mySeq !== this.seq || this.plugin.getFilePathForEditor(this.view) !== filePath) return;
-    if (mtime !== this.lastMtime) {
-      this.lastMtime = mtime;
-      this.dirtyLines.clear();
+    // null 只是“尚未建立 mtime 基线”，不能据此认定文档已保存；
+    // 否则用户在首次 stat 返回前编辑，会过早清除脏状态并显示旧 blame。
+    const previousMtime = this.lastMtime;
+    this.lastMtime = mtime;
+    if (previousMtime !== null && previousMtime !== mtime) {
+      this.documentDirty = false;
     }
-    if (this.dirtyLines.has(line)) {
+    if (this.documentDirty) {
       this.plugin.onBlameInfo(null, filePath);
       return;
     }
 
     const absPath = this.plugin.resolveAbsPath(filePath);
-    const key = this.plugin.cache.keyFor(absPath, mtime ?? 0, this.plugin.settings.ignoreWhitespace);
+    // 文件 mtime 之外还要带上 HEAD/index 状态，否则 git commit/add 后会继续复用旧 blame
+    const gitVersion = await getGitStateVersion(absPath);
+    if (mySeq !== this.seq || this.plugin.getFilePathForEditor(this.view) !== filePath) return;
+
+    const stateVersion = `${mtime ?? 0}::${gitVersion ?? "nogit"}`;
+    const key = this.plugin.cache.keyFor(absPath, mtime ?? 0, gitVersion, this.plugin.settings.ignoreWhitespace);
     let result = this.plugin.cache.get(key);
     if (result === undefined) {
       try {
-        result = await this.plugin.fetchBlame(absPath, this.plugin.settings.ignoreWhitespace, mtime ?? 0);
+        result = await this.plugin.fetchBlame(absPath, this.plugin.settings.ignoreWhitespace, stateVersion);
       } catch {
         result = null;
       }

@@ -1,6 +1,6 @@
 import type { BlameLine, BlameResult } from "../types";
 import { getRepoRoot, runGit } from "./gitRunner";
-import { relative, sep } from "path";
+import { relative, sep } from "node:path";
 
 export interface BlameOptions {
   ignoreWhitespace: boolean;
@@ -17,7 +17,7 @@ export async function blameFile(absFilePath: string, opts: BlameOptions): Promis
   if (!repoRoot) return null;
 
   const rel = relative(repoRoot, absFilePath).split(sep).join("/");
-  const args = ["blame", "--porcelain", "--encoding=UTF-8"];
+  const args: string[] = ["blame", "--porcelain", "--encoding=UTF-8"];
   if (opts.ignoreWhitespace) args.push("-w");
   args.push("--", rel);
 

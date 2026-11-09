@@ -1,4 +1,5 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
+import type { SettingDefinitionItem } from "obsidian";
 import type GitLinePlugin from "./main";
 import type { GitLineSettings } from "./types";
 import { formatBlame } from "./util/format";
@@ -29,6 +30,160 @@ export class GitLineSettingTab extends PluginSettingTab {
 
   constructor(app: App, private plugin: GitLinePlugin) {
     super(app, plugin);
+  }
+
+  /** Obsidian 1.13+ 声明式设置：进入全局设置搜索；旧版本仍回退到 display() */
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      {
+        type: "group",
+        heading: "Line-end Git blame / 行尾 Git 归属",
+        items: [
+          {
+            name: "Enable · 启用",
+            desc: "Show Git blame at the end of the line. / 是否显示行尾 Git 归属。",
+            control: { type: "toggle", key: "enabled", defaultValue: true },
+          },
+          {
+            name: "Display format · 显示格式",
+            desc: "Placeholders: {date} {time} {author} {message} {hash}; free combination & ordering. / 占位符：{date} {time} {author} {message} {hash}，可自由组合、调序。",
+            control: {
+              type: "text",
+              key: "format",
+              defaultValue: DEFAULT_SETTINGS.format,
+              placeholder: "{author} {time} {message}",
+            },
+          },
+          {
+            name: "Time style · 时间样式",
+            desc: "Relative time (e.g. 3 days ago) or absolute time (to the minute). / 相对时间（如 3 天前）或绝对时间（精确到分钟）。",
+            control: {
+              type: "dropdown",
+              key: "timeStyle",
+              defaultValue: DEFAULT_SETTINGS.timeStyle,
+              options: {
+                relative: "Relative · 相对时间",
+                absolute: "Absolute · 绝对时间",
+              },
+            },
+          },
+          {
+            name: "Absolute time format · 绝对时间格式",
+            desc: "Moment format string, e.g. YYYY-MM-DD HH:mm (to the minute). / moment 格式串，例如 YYYY-MM-DD HH:mm（精确到分钟）。",
+            control: {
+              type: "text",
+              key: "absoluteFormat",
+              defaultValue: DEFAULT_SETTINGS.absoluteFormat,
+              placeholder: "YYYY-MM-DD HH:mm",
+            },
+          },
+          {
+            name: "Uncommitted lines · 未提交行",
+            desc: "Show an uncommitted marker on lines not yet committed. / 尚未提交的行显示「未提交」。",
+            control: { type: "toggle", key: "showUncommitted", defaultValue: true },
+          },
+          {
+            name: "Ignore whitespace · 忽略空白改动",
+            desc: "Map to git blame -w: ignore whitespace-only changes. / 映射 git blame -w：仅空白差异不计为新提交。",
+            control: { type: "toggle", key: "ignoreWhitespace", defaultValue: false },
+          },
+          {
+            name: "Status bar · 状态栏",
+            desc: "Show the current line's author in the status bar. / 在状态栏显示当前行提交人（带时间）。",
+            control: { type: "toggle", key: "showStatusBar", defaultValue: true },
+          },
+          {
+            name: "Cache size · 缓存文件数",
+            desc: "Max number of files whose blame results are kept in LRU cache. / LRU 缓存最多保留多少个文件的 blame 结果。",
+            control: {
+              type: "number",
+              key: "cacheMaxFiles",
+              defaultValue: DEFAULT_SETTINGS.cacheMaxFiles,
+              placeholder: "100",
+              min: 1,
+              step: 1,
+              validate: (value) =>
+                Number.isInteger(value) && value > 0 ? undefined : "Cache size must be a positive integer. / 缓存文件数必须是正整数。",
+            },
+          },
+          {
+            name: "Preview · 预览",
+            searchable: false,
+            render: (setting) => {
+              this.previewEl = setting.controlEl.createEl("div", { cls: "gitline-setting-preview" });
+              this.previewEl.createEl("strong", { text: "Preview · 预览：" });
+              this.refreshPreview();
+            },
+          },
+        ],
+      },
+    ];
+  }
+
+  getControlValue(key: string): unknown {
+    const s = this.plugin.settings;
+    switch (key) {
+      case "enabled":
+        return s.enabled;
+      case "format":
+        return s.format;
+      case "timeStyle":
+        return s.timeStyle;
+      case "absoluteFormat":
+        return s.absoluteFormat;
+      case "showUncommitted":
+        return s.showUncommitted;
+      case "ignoreWhitespace":
+        return s.ignoreWhitespace;
+      case "showStatusBar":
+        return s.showStatusBar;
+      case "cacheMaxFiles":
+        return s.cacheMaxFiles;
+      default:
+        return undefined;
+    }
+  }
+
+  async setControlValue(key: string, value: unknown): Promise<void> {
+    const s = this.plugin.settings;
+    switch (key) {
+      case "enabled":
+        if (typeof value !== "boolean") return;
+        s.enabled = value;
+        break;
+      case "format":
+        if (typeof value !== "string") return;
+        s.format = value || DEFAULT_SETTINGS.format;
+        break;
+      case "timeStyle":
+        if (value !== "relative" && value !== "absolute") return;
+        s.timeStyle = value;
+        break;
+      case "absoluteFormat":
+        if (typeof value !== "string") return;
+        s.absoluteFormat = value || DEFAULT_SETTINGS.absoluteFormat;
+        break;
+      case "showUncommitted":
+        if (typeof value !== "boolean") return;
+        s.showUncommitted = value;
+        break;
+      case "ignoreWhitespace":
+        if (typeof value !== "boolean") return;
+        s.ignoreWhitespace = value;
+        break;
+      case "showStatusBar":
+        if (typeof value !== "boolean") return;
+        s.showStatusBar = value;
+        break;
+      case "cacheMaxFiles":
+        if (typeof value !== "number" || !Number.isInteger(value) || value < 1) return;
+        s.cacheMaxFiles = value;
+        break;
+      default:
+        return;
+    }
+    await this.plugin.saveSettings();
+    this.refreshPreview();
   }
 
   display(): void {
@@ -162,6 +317,6 @@ export class GitLineSettingTab extends PluginSettingTab {
       this.previewEl.removeChild(this.previewEl.lastChild);
     }
     const sample = formatBlame(PREVIEW_SAMPLE, this.plugin.settings);
-    this.previewEl.appendChild(document.createTextNode(" " + sample));
+    this.previewEl.appendText(" " + sample);
   }
 }

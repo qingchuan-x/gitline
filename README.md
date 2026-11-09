@@ -14,8 +14,12 @@ GitLine is an Obsidian desktop plugin that shows Git blame information at the en
 - **Uncommitted lines**: lines that have not been committed yet are marked as *Uncommitted*.
 - **Status bar**: shows the author of the current line (optional).
 - **Whitespace handling**: `git blame -w` can be enabled to ignore whitespace-only changes.
-- **Caching**: an LRU cache avoids repeated `git` calls; entries are invalidated automatically when a file is saved.
+- **Caching**: an LRU cache avoids repeated `git` calls; entries are invalidated when a file is saved or the repository state changes.
 - **Robustness**: git is detected automatically; a friendly hint is shown instead of an error when git is unavailable.
+
+### Security
+
+GitLine invokes the locally installed `git` executable with `execFile` and an argument array. It never passes input through a shell and never executes user-provided command strings.
 
 ## Requirements
 
