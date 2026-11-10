@@ -11,7 +11,7 @@ jobs:
   attest-release-assets:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       id-token: write
       attestations: write
 
@@ -33,21 +33,46 @@ jobs:
       - name: Build from source
         run: npm run build
 
-      - name: Collect release assets
+      - name: Collect build output
         run: |
-          mkdir -p dist
-          cp main.js manifest.json styles.css dist/
+          mkdir -p built
+          cp main.js manifest.json styles.css built/
 
-      - name: Replace release assets with this build
+      - name: Download published release assets
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" dist/main.js dist/manifest.json dist/styles.css --clobber
+        run: |
+          mkdir -p release-assets
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir release-assets \
+            --pattern main.js \
+            --pattern manifest.json \
+            --pattern styles.css
 
-      - name: Attest build provenance
+      - name: Verify assets match the released source
+        run: |
+          set -euo pipefail
+          test -f built/main.js
+          test -f built/manifest.json
+          test -f built/styles.css
+          test -f release-assets/main.js
+          test -f release-assets/manifest.json
+          test -f release-assets/styles.css
+
+          cmp built/main.js release-assets/main.js
+          cmp built/manifest.json release-assets/manifest.json
+
+          # styles.css may be checked out with different line endings on Windows.
+          tr -d '\r' < built/styles.css > /tmp/built-styles.css
+          tr -d '\r' < release-assets/styles.css > /tmp/release-styles.css
+          cmp /tmp/built-styles.css /tmp/release-styles.css
+
+      - name: Attest published assets
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
-            dist/main.js
-            dist/manifest.json
-            dist/styles.css
+            release-assets/main.js
+            release-assets/manifest.json
+            release-assets/styles.css
